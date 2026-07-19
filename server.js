@@ -1,6 +1,9 @@
+require('dotenv').config();
+
 const http = require('http');
 // 1. Import the ngrok package
 const ngrok = require('@ngrok/ngrok');
+
 console.log("Loaded Token:", process.env.NGROK_AUTHTOKEN ? process.env.NGROK_AUTHTOKEN.substring(0, 5) + "..." : "UNDEFINED");
 const PORT = 3000;
 
