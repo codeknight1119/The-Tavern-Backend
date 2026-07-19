@@ -1,0 +1,12 @@
+{
+  "name": "The-Tavern-Backend",
+  "version": "1.0.0",
+  "description": "The backend for the WCHS D&D club Tavern site",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@ngrok/ngrok": "^1.0.0"
+  }
+}
