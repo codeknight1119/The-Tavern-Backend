@@ -1,5 +1,5 @@
 require("dotenv").config();
-const admin = require("./services/firebase");
+const firebase = require("./services/firebase");
 const http = require("http");
 const ngrok = require("@ngrok/ngrok");
 
@@ -122,7 +122,7 @@ async function authenticate(req) {
     const token = authHeader.replace("Bearer ", "");
 
     try {
-        return await admin.auth().verifyIdToken(token);
+        return await firebase.auth.verifyIdToken(token);
     }
     catch(err) {
          console.error(err);
