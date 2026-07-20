@@ -1,13 +1,20 @@
 require("dotenv").config();
+const admin = require("./services/firebase");
 const http = require("http");
 const ngrok = require("@ngrok/ngrok");
 
 const PORT = 8085;
 
 // HTTP Server
-const server = http.createServer((req, res) => {
+const server = http.createServer( async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     console.log(`${req.method} ${url.pathname}`);
+
+    const user = await authenticate(req)
+
+    if(!user){
+        return unauthorized(res);
+    }
 
     switch (req.method) {
         case "GET":
@@ -75,6 +82,25 @@ function notFound(res) {
     res.writeHead(404, { "Content-Type": "text/plain" });
     res.end("Endpoint not found.");
 }
+
+async function authenticate(req) {
+
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader)
+        return null;
+
+    const token = authHeader.replace("Bearer ", "");
+
+    try {
+        return await admin.auth().verifyIdToken(token);
+    }
+    catch {
+        return null;
+    }
+}
+
+
 
 server.listen(PORT, async () => {
     console.log(`Server listening on http://localhost:${PORT}`);
