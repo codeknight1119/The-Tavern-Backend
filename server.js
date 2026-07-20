@@ -28,8 +28,9 @@ const server = http.createServer( async (req, res) => {
     if(!user){
         return unauthorized(res);
     }
-
+const params = url.searchParams;
     switch (req.method) {
+        
         case "GET":
             switch (url.pathname) {
                 case "/":
@@ -39,8 +40,14 @@ const server = http.createServer( async (req, res) => {
 
                 case "/hello":
                     return sendJSON(res, {
-                        message: `Hello ${url.searchParams.get("name") ?? "World"}!`
+                        message: `Hello ${params.get("name") ?? "World"}!`
                     });
+
+                case "/permsUpdate":
+                    return sendJSON(res, {
+                        user: params.get("user"),
+                        permission: params.get("perm")
+                    })
                 default:
                     return notFound(res);
             }
