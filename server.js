@@ -124,7 +124,7 @@ async function authenticate(req) {
     try {
         return await admin.auth().verifyIdToken(token);
     }
-    catch {
+    catch(err) {
          console.error(err);
         return null;
     }
