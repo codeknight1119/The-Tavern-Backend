@@ -114,6 +114,8 @@ function notFound(res) {
 async function authenticate(req) {
     const authHeader = req.headers.authorization;
 
+    console.log(authHeader);
+
     if (!authHeader)
         return null;
 
