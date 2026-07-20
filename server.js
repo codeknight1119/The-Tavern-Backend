@@ -1,58 +1,79 @@
-const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '.env') });
+require("dotenv").config();
+const http = require("http");
+const ngrok = require("@ngrok/ngrok");
 
-const http = require('http');
-// 1. Import the ngrok package
-const ngrok = require('@ngrok/ngrok');
+const PORT = 8085;
 
-console.log("Loaded Token:", process.env.NGROK_AUTHTOKEN ? process.env.NGROK_AUTHTOKEN.substring(0, 5) + "..." : "UNDEFINED");
-const PORT = 3000;
-
+// HTTP Server
 const server = http.createServer((req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    const url = new URL(req.url, `http://${req.headers.host}`)
+    console.log(`${req.method} ${url.pathname}`)
 
-    if (req.method === 'OPTIONS') {
-        res.writeHead(200);
-        res.end();
-        return;
+    switch (req.method) {
+
+        case "GET":
+            switch (url.pathname) {
+
+                case "/":
+                    return sendJSON(res, {
+                        message: "API works, try another route"
+                    })
+
+                case "/hello":
+                    return sendJSON(res, {
+                        message: `Hello ${url.searchParams.get("name") ?? "World"}!`
+                    })
+                default:
+                    return notFound(res)
+            }
+
+        case "POST":
+
+            switch (url.pathname) {
+                case "/echo":
+                    let body = "";
+
+                    req.on("data", chunk => body += chunk);
+
+                    req.on("end", () => {
+                        sendJSON(res, JSON.parse(body));
+                    });
+
+                    return;
+
+                default:
+                    return notFound(res);
+
+            }
+        default:
+            return notFound(res);
     }
 
-    if (req.url === '/' && req.method === 'GET') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: "Hello from your Node.js server!" }));
-    } 
-    else if (req.url === '/' && req.method === 'POST') {
-        let body = '';
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-        req.on('end', () => {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ 
-                message: "Data received successfully!", 
-                receivedData: body 
-            }));
-        });
-    } 
-    else {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: "Route not found" }));
-    }
-});
+})
+
+
+function sendJSON(res, data) {
+    res.writeHead(200, {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*"
+    });
+
+    res.end(JSON.stringify(data));
+}
+
+function notFound(res) {
+    res.writeHead(404);
+    res.end("Endpoint not found.");
+}
+
 
 server.listen(PORT, async () => {
-    console.log(`Server running locally on http://localhost:${PORT}`);
-    
-    // 2. Automatically establish the ngrok tunnel when the server starts
-    try {
-        const listener = await ngrok.forward({
-            addr: PORT,
-            authtoken: process.env.NGROK_AUTHTOKEN // Pulls your token from the OS environment
-        });
-        console.log(`Ingress established at: ${listener.url()}`);
-    } catch (error) {
-        console.error("Error setting up ngrok:", error);
-    }
+    console.log(`Server listening on http://localhost:${PORT}`);
+
+    const listener = await ngrok.forward({
+        addr: PORT,
+        authtoken_from_env: true,
+    });
+
+    console.log(`Tunnel: ${listener.url()}`);
 });
