@@ -23,11 +23,11 @@ const server = http.createServer( async (req, res) => {
     }
 
     // Authenticate actual GET/POST data requests
-    const user = await authenticate(req);
+   /* const user = await authenticate(req);
 
     if(!user){
         return unauthorized(res);
-    }
+    }*/
 
     switch (req.method) {
         case "GET":
