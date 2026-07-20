@@ -10,7 +10,20 @@ const server = http.createServer( async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     console.log(`${req.method} ${url.pathname}`);
 
-    const user = await authenticate(req)
+    // 1. FIX: Handle CORS Preflight (OPTIONS) requests BEFORE authentication
+    if (req.method === "OPTIONS") {
+        res.writeHead(204, {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            // Tell the browser it is allowed to send your custom headers
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, ngrok-skip-browser-warning",
+            "Access-Control-Max-Age": "86400" // Cache this response for 24 hours
+        });
+        return res.end();
+    }
+
+    // Authenticate actual GET/POST data requests
+    const user = await authenticate(req);
 
     if(!user){
         return unauthorized(res);
@@ -34,15 +47,16 @@ const server = http.createServer( async (req, res) => {
 
         case "POST":
             switch (url.pathname) {
-                // Enclosing the case in braces {} creates a safe block-scope
                 case "/echo": { 
                     let body = "";
-                    req.setEncoding("utf8"); // Safely interpret chunks as string data
+                    req.setEncoding("utf8");
 
                     req.on("data", chunk => {
-                        // Protect against memory exhaustion (Limit payload to ~1MB)
                         if (body.length + chunk.length > 1e6) { 
-                            res.writeHead(413, { "Content-Type": "application/json" });
+                            res.writeHead(413, { 
+                                "Content-Type": "application/json",
+                                "Access-Control-Allow-Origin": "*"
+                            });
                             return res.end(JSON.stringify({ error: "Payload too large" }));
                         }
                         body += chunk;
@@ -50,12 +64,13 @@ const server = http.createServer( async (req, res) => {
 
                     req.on("end", () => {
                         try {
-                            // Guard against completely empty bodies
                             const parsedData = body ? JSON.parse(body) : {}; 
                             sendJSON(res, parsedData);
                         } catch (err) {
-                            // Gracefully catch invalid JSON without crashing the server
-                            res.writeHead(400, { "Content-Type": "application/json" });
+                            res.writeHead(400, { 
+                                "Content-Type": "application/json",
+                                "Access-Control-Allow-Origin": "*"
+                            });
                             res.end(JSON.stringify({ error: "Invalid JSON payload" }));
                         }
                     });
@@ -73,18 +88,30 @@ const server = http.createServer( async (req, res) => {
 function sendJSON(res, data) {
     res.writeHead(200, {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*"
+        "Access-Control-Allow-Origin": "*" // Allows standard requests
     });
     res.end(JSON.stringify(data));
 }
 
+// 2. FIX: Added the missing unauthorized helper function with CORS headers
+function unauthorized(res) {
+    res.writeHead(401, { 
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*" 
+    });
+    res.end(JSON.stringify({ error: "Unauthorized access" }));
+}
+
+// 3. FIX: Added CORS headers to the 404 handler just in case
 function notFound(res) {
-    res.writeHead(404, { "Content-Type": "text/plain" });
-    res.end("Endpoint not found.");
+    res.writeHead(404, { 
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*"
+    });
+    res.end(JSON.stringify({ error: "Endpoint not found." }));
 }
 
 async function authenticate(req) {
-
     const authHeader = req.headers.authorization;
 
     if (!authHeader)
@@ -100,13 +127,9 @@ async function authenticate(req) {
     }
 }
 
-
-
 server.listen(PORT, async () => {
     console.log(`Server listening on http://localhost:${PORT}`);
 
-    // Wrap ngrok initialization in a try/catch block 
-    // to catch missing or invalid token configuration errors.
     try {
         const listener = await ngrok.forward({
             addr: PORT,
