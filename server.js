@@ -1,6 +1,6 @@
 require("dotenv").config();
 
-import {BANNEDWORDS} from "./bannedWords.js"
+const {BANNEDWORDS} = require("./bannedWords.js")
 
 const firebase = require("./services/firebase");
 const http = require("http");
