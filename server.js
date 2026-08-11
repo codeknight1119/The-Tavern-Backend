@@ -74,6 +74,12 @@ const server = http.createServer(async (req, res) => {
                             `Hello ${params.get("name") ?? "World"}!`
                     });
 
+                case "/health":
+                    return sendJSON(res, {
+                        status: "Ready for another adventure!"
+                        //tavern themed. ik im a great dev
+                    })
+
 
                 default:
                     return notFound(res);
