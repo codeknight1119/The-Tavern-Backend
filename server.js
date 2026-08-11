@@ -123,6 +123,7 @@ const server = http.createServer(async (req, res) => {
                 }
 
                 case "/checkMessage": {
+                     const body = await readBody(req);
                   const innapropiateContent = BANNEDWORDS.some(word => body.message.includes(keyword))
                     return sendJSON(res, {
                         clean: innapropiateContent
