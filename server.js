@@ -28,7 +28,7 @@ const server = http.createServer( async (req, res) => {
     if(!user){
         return unauthorized(res);
     }
-const params = url.searchParams;
+    const params = url.searchParams;
     switch (req.method) {
         
         case "GET":
@@ -43,47 +43,16 @@ const params = url.searchParams;
                         message: `Hello ${params.get("name") ?? "World"}!`
                     });
 
-                case "/permsUpdate":
-                    return sendJSON(res, {
-                        user: params.get("user"),
-                        permission: params.get("perm")
-                    })
                 default:
                     return notFound(res);
             }
 
         case "POST":
             switch (url.pathname) {
-                case "/echo": { 
-                    let body = "";
-                    req.setEncoding("utf8");
+               case "/setRole":
+                if(user.officer !== true) return res.status(403).json({error: "Unauthorized"})
 
-                    req.on("data", chunk => {
-                        if (body.length + chunk.length > 1e6) { 
-                            res.writeHead(413, { 
-                                "Content-Type": "application/json",
-                                "Access-Control-Allow-Origin": "*"
-                            });
-                            return res.end(JSON.stringify({ error: "Payload too large" }));
-                        }
-                        body += chunk;
-                    });
-
-                    req.on("end", () => {
-                        try {
-                            const parsedData = body ? JSON.parse(body) : {}; 
-                            sendJSON(res, parsedData);
-                        } catch (err) {
-                            res.writeHead(400, { 
-                                "Content-Type": "application/json",
-                                "Access-Control-Allow-Origin": "*"
-                            });
-                            res.end(JSON.stringify({ error: "Invalid JSON payload" }));
-                        }
-                    });
-
-                    return;
-                }
+                return sendJSON({message: "Welcome, officer"})
                 default:
                     return notFound(res);
             }
