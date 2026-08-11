@@ -1,5 +1,7 @@
 require("dotenv").config();
 
+import {BANNEDWORDS} from "./bannedWords.js"
+
 const firebase = require("./services/firebase");
 const http = require("http");
 const ngrok = require("@ngrok/ngrok");
@@ -112,6 +114,14 @@ const server = http.createServer(async (req, res) => {
                         message: "Welcome, officer",
                         received: body
                     });
+                }
+
+                case "/checkMessage": {
+                  const innapropiateContent = BANNEDWORDS.some(word => body.message.includes(keyword))
+                    return sendJSON(res, {
+                        clean: innapropiateContent
+                    })
+
                 }
 
 
