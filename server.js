@@ -114,21 +114,39 @@ const server = http.createServer(async (req, res) => {
                     const body = await readBody(req);
 
                     console.log("POST body:", body);
+                    /*
+                    Should have:
+                    id of user
+                    auth of self
+                    role to promote to
+                    */
 
 
-                    return sendJSON(res, {
-                        message: "Welcome, officer",
-                        received: body
-                    });
                 }
 
                 case "/checkMessage": {
-                     const body = await readBody(req);
-                  const innapropiateContent = BANNEDWORDS.some(word => body.message.includes(word))
-                    return sendJSON(res, {
-                        clean: innapropiateContent
-                    })
+                 const body = await readBody(req);
 
+                // 1. Safety check: prevent the server from crashing if 'message' is missing
+                if (!body || typeof body.message !== 'string') {
+                    return sendJSON(res, { 
+                        error: "A valid text message is required",
+                        clean: false 
+                    });
+                }
+
+                // 2. Convert the message to lowercase so "BadWord" and "badword" are treated the same
+                const messageLower = body.message.toLowerCase();
+
+                // 3. Check against the banned words list
+                const hasInappropriateContent = BANNEDWORDS.some(word => 
+                    messageLower.includes(word.toLowerCase())
+                );
+
+                // 4. Return the corrected logic
+                return sendJSON(res, {
+                    clean: !hasInappropriateContent 
+                });
                 }
 
 
