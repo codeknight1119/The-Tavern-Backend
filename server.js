@@ -3,6 +3,7 @@ require("dotenv").config();
 const {BANNEDWORDS} = require("./bannedWords.js")
 
 const firebase = require("./services/firebase");
+const admin = require('firebase-admin');
 const http = require("http");
 const ngrok = require("@ngrok/ngrok");
 
@@ -95,7 +96,7 @@ const server = http.createServer(async (req, res) => {
 
             switch (url.pathname) {
 
-                case "/setRole": {
+                case "/setPermissions": {
 
                     // Make sure the authenticated user
                     // is an officer.
@@ -111,15 +112,21 @@ const server = http.createServer(async (req, res) => {
 
 
                     // Read the POST body
-                    const body = await readBody(req);
+                    try{
+                        const body = await readBody(req);
 
-                    console.log("POST body:", body);
-                    /*
-                    Should have:
-                    id of user
-                    auth of self
-                    role to promote to
-                    */
+                        console.log("POST body:", body);
+                        /*
+                        Should have:
+                        id of user
+                        auth of self
+                        role to promote to
+                        */
+                        await admin.auth().setCustomUserClaims(uid, updatedClaims);
+                        return sendJSON(res, {message:"Permissions have been updated"})
+                    }catch(e){
+                        return sendJSON(res, {error: e}, 500)
+                    }
 
 
                 }
