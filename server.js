@@ -96,40 +96,45 @@ const server = http.createServer(async (req, res) => {
 
             switch (url.pathname) {
 
-                case "/setPermissions": {
-
-                    // Make sure the authenticated user
-                    // is an officer.
-                    if (user.officer !== true) {
-                        return sendJSON(
-                            res,
-                            {
-                                error: "Unauthorized"
-                            },
-                            403
-                        );
-                    }
-
-
-                    // Read the POST body
-                    try{
-                        const body = await readBody(req);
-
-                        console.log("POST body:", body);
-                        /*
-                        Should have:
-                        id of user
-                        auth of self
-                        role to promote to
-                        */
-                        await admin.auth().setCustomUserClaims(uid, updatedClaims);
-                        return sendJSON(res, {message:"Permissions have been updated"})
-                    }catch(e){
-                        return sendJSON(res, {error: e})
-                    }
-
-
+            case "/setPermissions": {
+                if (user.officer !== true) {
+                    return sendJSON(res, {
+                        error: "Unauthorized"
+                    }, 403);
                 }
+
+                try {
+                    const body = await readBody(req);
+
+                    console.log("POST body:", body);
+
+                    if (!body || !body.uid || !body.role) {
+                        return sendJSON(res, {
+                            error: "uid and role are required"
+                        }, 400);
+                    }
+
+                    const updatedClaims = {
+                        role: body.role
+                    };
+
+                    await admin.auth().setCustomUserClaims(
+                        body.uid,
+                        updatedClaims
+                    );
+
+                    return sendJSON(res, {
+                        message: "Permissions have been updated"
+                    });
+
+                } catch (e) {
+                    console.error("setPermissions error:", e);
+
+                    return sendJSON(res, {
+                        error: e.message || String(e)
+                    }, 500);
+                }
+            }
 
                 case "/checkMessage": {
                  const body = await readBody(req);
