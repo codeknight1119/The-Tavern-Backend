@@ -125,7 +125,7 @@ const server = http.createServer(async (req, res) => {
                         await admin.auth().setCustomUserClaims(uid, updatedClaims);
                         return sendJSON(res, {message:"Permissions have been updated"})
                     }catch(e){
-                        return sendJSON(res, {error: e}, 500)
+                        return sendJSON(res, {error: e})
                     }
 
 
