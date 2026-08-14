@@ -434,4 +434,5 @@ zoophilia
 🖕`
 
 
-export const BANNEDWORDS = bwtxt.split(/\r?\n/);
+const BANNEDWORDS = bwtxt.split(/\r?\n/);
+module.exports = {BANNEDWORDS}
