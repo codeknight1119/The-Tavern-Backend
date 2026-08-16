@@ -6,6 +6,7 @@ const firebase = require("./services/firebase");
 const admin = require('firebase-admin');
 const http = require("http");
 const ngrok = require("@ngrok/ngrok");
+const { exec } = require("child_process");
 
 const PORT = 8085;
 
@@ -159,6 +160,22 @@ const server = http.createServer(async (req, res) => {
                 return sendJSON(res, {
                     clean: !hasInappropriateContent 
                 });
+                }
+                case "/restart": {
+                if(user.tech !== true){
+                    return sendJSON(res, {"error": "Not allowed"}, 403)
+                }
+
+                exec("git pull", (error, stdout, stderr) => {
+                    if (error) {
+                        console.error(`Git pull error: ${error.message}`);
+                        return sendJSON(res, { error: "Failed to pull updates" }, 500);
+                    }
+
+                    process.exit(0)
+                });
+                
+
                 }
 
 
