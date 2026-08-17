@@ -161,21 +161,44 @@ const server = http.createServer(async (req, res) => {
                     clean: !hasInappropriateContent 
                 });
                 }
-                case "/restart": {
-                if(user.tech !== true){
-                    return sendJSON(res, {"error": "Not allowed"}, 403)
-                }
 
-                exec("git pull", (error, stdout, stderr) => {
-                    if (error) {
-                        console.error(`Git pull error: ${error.message}`);
-                        return sendJSON(res, { error: "Failed to pull updates" }, 500);
+                // Restart/reset the server through PM2 after pulling the latest code.
+                case "/restart":
+                case "/reset": {
+                    if (user.tech !== true) {
+                        return sendJSON(res, { error: "Not allowed" }, 403);
                     }
 
-                    process.exit(0)
-                });
-                
+                    exec("git pull", (error, stdout, stderr) => {
+                        if (error) {
+                            console.error(`Git pull error: ${error.message}`);
+                            return sendJSON(res, {
+                                error: "Failed to pull updates"
+                            }, 500);
+                        }
 
+                        console.log(stdout);
+                        if (stderr) console.error(stderr);
+
+                        // Send the response before PM2 restarts this process.
+                        sendJSON(res, {
+                            message: "Updates pulled. Restarting server with PM2."
+                        });
+
+                        setTimeout(() => {
+                            exec("pm2 restart server.js", (restartError, restartStdout, restartStderr) => {
+                                if (restartError) {
+                                    console.error(`PM2 restart error: ${restartError.message}`);
+                                    return;
+                                }
+
+                                console.log(restartStdout);
+                                if (restartStderr) console.error(restartStderr);
+                            });
+                        }, 500);
+                    });
+
+                    return;
                 }
 
 
