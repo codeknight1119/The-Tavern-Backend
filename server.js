@@ -8,7 +8,7 @@ const http = require("http");
 const ngrok = require("@ngrok/ngrok");
 const { exec } = require("child_process");
 
-const PORT = 8085;
+const PORT = process.env.PORT || 8080;
 
 
 // ================================
@@ -45,6 +45,10 @@ const server = http.createServer(async (req, res) => {
         // ================================
         // AUTHENTICATION
         // ================================
+
+        if(req.method === "GET" && url.pathname === "/health"){
+            return sendJSON(res, {message:"Server is active."})
+        }
 
         const user = await authenticate(req);
 
