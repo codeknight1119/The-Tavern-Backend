@@ -157,7 +157,7 @@ const server = http.createServer(async (req, res) => {
                             }, 400);
                         }
 
-                        const targetUser = await admin.auth().getUser(body.uid);
+                        const targetUser = await firebase.auth.getUser(body.uid);
                         const claims = targetUser.customClaims || {};
 
                         return sendJSON(res, {
@@ -221,11 +221,11 @@ const server = http.createServer(async (req, res) => {
                         // Firebase Auth accepts at most 100 users per getUsers call.
                         for (let i = 0; i < uidRequests.length; i += 100) {
                             const batch = uidRequests.slice(i, i + 100);
-                            const result = await admin.auth().getUsers(batch);
+                            const result = await firebase.auth.getUsers(batch);
 
                             const notAllowedAuthUsers = result.users.filter(
                                 authUser => {
-                                    
+
                                     const claims = authUser.customClaims || {};
                                     return claims.allowed !== true;
                                 }
@@ -302,7 +302,7 @@ const server = http.createServer(async (req, res) => {
                             }, 400);
                         }
 
-                        const targetUser = await admin.auth().getUser(body.uid);
+                        const targetUser = await firebase.auth.getUser(body.uid);
                         const existingClaims = targetUser.customClaims || {};
 
                         const updatedClaims = {
@@ -311,7 +311,7 @@ const server = http.createServer(async (req, res) => {
                             permissions: body.permissions
                         };
 
-                        await admin.auth().setCustomUserClaims(
+                        await firebase.auth.setCustomUserClaims(
                             body.uid,
                             updatedClaims
                         );
