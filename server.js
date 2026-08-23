@@ -255,7 +255,7 @@ const server = http.createServer(async (req, res) => {
 
                                 notAllowedUsers.push({
                                     id: authUser.uid,
-                                    "Real Name": profile["Real Name"] || "Unknown",
+                                    "realName": profile["realName"],
                                     duesPaid: profile.duesPaid ?? false,
                                     claims: {
                                         allowed: claims.allowed === true,
