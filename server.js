@@ -225,6 +225,7 @@ const server = http.createServer(async (req, res) => {
 
                             const notAllowedAuthUsers = result.users.filter(
                                 authUser => {
+                                    
                                     const claims = authUser.customClaims || {};
                                     return claims.allowed !== true;
                                 }
