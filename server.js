@@ -19,26 +19,35 @@ let userManifestTimestamp = 0;
 
 async function checkUserManifest() {
     try {
-        const timestampData = await firebase.firestore
+        const timestampSnapshot = await firebase.db
             .collection("users")
             .doc("userManifestTimestamp")
             .get();
 
-        const remoteTimestamp = Number(timestampData.data()?.timestamp) || 0;
+        const remoteTimestamp = Number(
+            timestampSnapshot.data()?.timestamp
+        ) || 0;
 
-        if (userManifest === null || remoteTimestamp > userManifestTimestamp) {
-            const manifestData = await firebase.firestore
+        if (
+            userManifest === null ||
+            remoteTimestamp > userManifestTimestamp
+        ) {
+            const manifestSnapshot = await firebase.db
                 .collection("users")
                 .doc("userManifest")
                 .get();
 
-            const rawData = manifestData.data();
+            const rawData = manifestSnapshot.data();
 
             userManifest = Array.isArray(rawData?.manifest)
                 ? rawData.manifest
                 : [];
 
             userManifestTimestamp = remoteTimestamp;
+
+            console.log(
+                `User manifest refreshed (${userManifest.length} users).`
+            );
         }
 
         return userManifest;
@@ -192,23 +201,46 @@ const server = http.createServer(async (req, res) => {
 
                         const notAllowedUsers = [];
 
-                        // Firebase Auth getUsers accepts batches, so avoid making
-                        // one network request per UID.
+                        // Firebase Auth accepts at most 100 users per getUsers call.
                         for (let i = 0; i < uidRequests.length; i += 100) {
                             const batch = uidRequests.slice(i, i + 100);
                             const result = await admin.auth().getUsers(batch);
 
-                            for (const authUser of result.users) {
-                                const claims = authUser.customClaims || {};
-
-                                if (claims.allowed === true) {
-                                    continue;
+                            const notAllowedAuthUsers = result.users.filter(
+                                authUser => {
+                                    const claims = authUser.customClaims || {};
+                                    return claims.allowed !== true;
                                 }
+                            );
+
+                            if (notAllowedAuthUsers.length === 0) {
+                                continue;
+                            }
+
+                            // Fetch the corresponding Firestore profile documents
+                            // so the frontend can render the same user-search template.
+                            const profileRefs = notAllowedAuthUsers.map(
+                                authUser =>
+                                    firebase.db.collection("users").doc(authUser.uid)
+                            );
+
+                            const profileSnapshots =
+                                await firebase.db.getAll(...profileRefs);
+
+                            for (let j = 0; j < notAllowedAuthUsers.length; j++) {
+                                const authUser = notAllowedAuthUsers[j];
+                                const profileSnapshot = profileSnapshots[j];
+                                const profile = profileSnapshot.exists
+                                    ? profileSnapshot.data()
+                                    : {};
+                                const claims = authUser.customClaims || {};
 
                                 notAllowedUsers.push({
                                     id: authUser.uid,
+                                    "Real Name": profile["Real Name"] || "Unknown",
+                                    duesPaid: profile.duesPaid ?? false,
                                     claims: {
-                                        allowed: false,
+                                        allowed: claims.allowed === true,
                                         permissions: Array.isArray(claims.permissions)
                                             ? claims.permissions
                                             : []
