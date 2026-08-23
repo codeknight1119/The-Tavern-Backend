@@ -490,6 +490,38 @@ async function authenticate(req) {
     }
 }
 
+
+async function bootstrapAdmin() {
+    const uid = "p1DqhQjZvBNWYkFuYJnYBGrbEa53";
+
+    const targetUser = await admin.auth().getUser(uid);
+
+    const existingClaims = targetUser.customClaims || {};
+
+    const updatedClaims = {
+        ...existingClaims,
+        allowed: true,
+        permissions: [
+            ...(Array.isArray(existingClaims.permissions)
+                ? existingClaims.permissions
+                : []),
+            "officer",
+            "tech"
+        ]
+    };
+
+    // Remove duplicates
+    updatedClaims.permissions = [
+        ...new Set(updatedClaims.permissions)
+    ];
+
+    await admin.auth().setCustomUserClaims(uid, updatedClaims);
+
+    console.log("Admin claims updated for:", uid);
+    console.log(updatedClaims);
+}
+
+
 // ================================
 // START SERVER
 // ================================
