@@ -58,6 +58,55 @@ async function checkUserManifest() {
 }
 
 // ================================
+// MANIFEST LOCATION MIGRATION
+// ================================
+
+async function migrateManifestLocations() {
+    try {
+        console.log("Starting manifest location migration...");
+
+        const oldManifestRef = firebase.db
+            .collection("users")
+            .doc("userManifest");
+
+        const oldTimestampRef = firebase.db
+            .collection("users")
+            .doc("userManifestTimestamp");
+
+        const newManifestRef = firebase.db
+            .collection("manifest")
+            .doc("userManifest");
+
+        const newTimestampRef = firebase.db
+            .collection("manifest")
+            .doc("userManifestTimestamp");
+
+        const [manifestSnapshot, timestampSnapshot] = await Promise.all([
+            oldManifestRef.get(),
+            oldTimestampRef.get()
+        ]);
+
+        if (!manifestSnapshot.exists) {
+            console.log("Old userManifest document does not exist. Nothing to migrate.");
+        } else {
+            await newManifestRef.set(manifestSnapshot.data());
+            console.log("Migrated users/userManifest -> manifest/userManifest");
+        }
+
+        if (!timestampSnapshot.exists) {
+            console.log("Old userManifestTimestamp document does not exist. Nothing to migrate.");
+        } else {
+            await newTimestampRef.set(timestampSnapshot.data());
+            console.log("Migrated users/userManifestTimestamp -> manifest/userManifestTimestamp");
+        }
+
+        console.log("Manifest location migration complete.");
+    } catch (error) {
+        console.error("Manifest location migration error:", error);
+    }
+}
+
+// ================================
 // USER DOCUMENT MIGRATION
 // ================================
 
