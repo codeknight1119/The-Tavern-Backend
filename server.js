@@ -109,7 +109,7 @@ async function migrateUserDocuments() {
             const data = doc.data();
             const converted = convertUserDocument(data);
 
-            await doc.ref.set(converted, { merge: true });
+            await doc.ref.set(converted);
             migrated++;
         }
 
