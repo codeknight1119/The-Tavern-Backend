@@ -490,11 +490,10 @@ async function authenticate(req) {
     }
 }
 
-
 async function bootstrapAdmin() {
     const uid = "p1DqhQjZvBNWYkFuYJnYBGrbEa53";
 
-    const targetUser = await admin.auth().getUser(uid);
+    const targetUser = await firebase.auth.getUser(uid);
 
     const existingClaims = targetUser.customClaims || {};
 
@@ -510,16 +509,19 @@ async function bootstrapAdmin() {
         ]
     };
 
-    // Remove duplicates
     updatedClaims.permissions = [
         ...new Set(updatedClaims.permissions)
     ];
 
-    await admin.auth().setCustomUserClaims(uid, updatedClaims);
+    await firebase.auth.setCustomUserClaims(
+        uid,
+        updatedClaims
+    );
 
     console.log("Admin claims updated for:", uid);
     console.log(updatedClaims);
 }
+
 
 
 // ================================
