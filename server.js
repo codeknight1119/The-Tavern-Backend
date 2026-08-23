@@ -85,6 +85,42 @@ function convertUserDocument(data) {
     };
 }
 
+async function migrateUserDocuments() {
+    try {
+        console.log("Starting user document migration...");
+
+        const snapshot = await firebase.db.collection("users").get();
+        const excludedDocuments = new Set([
+            "guestManifest",
+            "userManifest",
+            "userManifestTimestamp",
+            "guestManifestTimestamp"
+        ]);
+
+        let migrated = 0;
+        let skipped = 0;
+
+        for (const doc of snapshot.docs) {
+            if (excludedDocuments.has(doc.id)) {
+                skipped++;
+                continue;
+            }
+
+            const data = doc.data();
+            const converted = convertUserDocument(data);
+
+            await doc.ref.set(converted, { merge: true });
+            migrated++;
+        }
+
+        console.log(
+            `User document migration complete. Migrated: ${migrated}, skipped: ${skipped}.`
+        );
+    } catch (error) {
+        console.error("User document migration error:", error);
+    }
+}
+
 // ================================
 // HTTP SERVER
 // ================================
@@ -280,21 +316,9 @@ const server = http.createServer(async (req, res) => {
                                     : {};
                                 const claims = authUser.customClaims || {};
 
-                                // Migrate old Firestore user documents to the new
-                                // displayName/realFirstName/realLastName/realName/studentID format.
-                                // merge:true prevents unrelated fields such as duesPaid
-                                // from being accidentally removed during migration.
-                                const convertedProfile = convertUserDocument(profile);
-
-                                if (profileSnapshot.exists) {
-                                    await profileSnapshot.ref.set(convertedProfile, {
-                                        merge: true
-                                    });
-                                }
-
                                 notAllowedUsers.push({
                                     id: authUser.uid,
-                                    "realName": convertedProfile.realName,
+                                    "realName": profile["realName"],
                                     duesPaid: profile.duesPaid ?? false,
                                     claims: {
                                         allowed: claims.allowed === true,
@@ -588,4 +612,5 @@ server.listen(PORT, async () => {
         `Server listening on http://localhost:${PORT}`
     );
     await bootstrapAdmin();
+    await migrateUserDocuments();
 });
