@@ -57,6 +57,33 @@ async function checkUserManifest() {
     }
 }
 
+// ================================
+// USER DOCUMENT MIGRATION
+// ================================
+
+function convertUserDocument(data) {
+    if (data.realName && data.realLastName && data.realFirstName && data.studentID) {
+        return data;
+    }
+
+    const name = data["Real Name"] || data.name || "";
+    const parts = name.split(" ");
+
+    return {
+        displayName: data.name || data["Real Name"] || "",
+        realFirstName: parts[0] || "",
+        realLastName: parts[1] || "",
+        realName:
+            data.realName ||
+            data["Real Name"] || data.name || "",
+        studentID: data.studentID || "-1",
+
+        // Keep campaigns exactly as they currently are
+        ...(data.campaigns !== undefined && {
+            campaigns: data.campaigns
+        })
+    };
+}
 
 // ================================
 // HTTP SERVER
@@ -195,27 +222,27 @@ const server = http.createServer(async (req, res) => {
                             return sendJSON(res, []);
                         }
 
-                    const manifestEntries = manifest
-                        .map(entry => {
+                        const manifestEntries = manifest
+                            .map(entry => {
 
-                            if (typeof entry === "string") {
-                                return {
-                                    id: entry
-                                };
-                            }
+                                if (typeof entry === "string") {
+                                    return {
+                                        id: entry
+                                    };
+                                }
 
-                            if (entry && typeof entry.id === "string") {
-                                return entry;
-                            }
+                                if (entry && typeof entry.id === "string") {
+                                    return entry;
+                                }
 
-                            return null;
+                                return null;
 
-                        })
-                        .filter(Boolean);
+                            })
+                            .filter(Boolean);
 
-                    const uidRequests = manifestEntries.map(entry => ({
-                        uid: entry.id
-                    }));
+                        const uidRequests = manifestEntries.map(entry => ({
+                            uid: entry.id
+                        }));
                         const notAllowedUsers = [];
 
                         // Firebase Auth accepts at most 100 users per getUsers call.
@@ -253,9 +280,21 @@ const server = http.createServer(async (req, res) => {
                                     : {};
                                 const claims = authUser.customClaims || {};
 
+                                // Migrate old Firestore user documents to the new
+                                // displayName/realFirstName/realLastName/realName/studentID format.
+                                // merge:true prevents unrelated fields such as duesPaid
+                                // from being accidentally removed during migration.
+                                const convertedProfile = convertUserDocument(profile);
+
+                                if (profileSnapshot.exists) {
+                                    await profileSnapshot.ref.set(convertedProfile, {
+                                        merge: true
+                                    });
+                                }
+
                                 notAllowedUsers.push({
                                     id: authUser.uid,
-                                    "realName": profile["realName"],
+                                    "realName": convertedProfile.realName,
                                     duesPaid: profile.duesPaid ?? false,
                                     claims: {
                                         allowed: claims.allowed === true,
@@ -540,8 +579,6 @@ async function bootstrapAdmin() {
     console.log(updatedClaims);
 }
 
-
-
 // ================================
 // START SERVER
 // ================================
@@ -550,5 +587,5 @@ server.listen(PORT, async () => {
     console.log(
         `Server listening on http://localhost:${PORT}`
     );
-await bootstrapAdmin()
+    await bootstrapAdmin();
 });
