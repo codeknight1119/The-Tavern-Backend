@@ -195,10 +195,27 @@ const server = http.createServer(async (req, res) => {
                             return sendJSON(res, []);
                         }
 
-                        const uidRequests = manifest
-                            .filter(uid => typeof uid === "string" && uid.length > 0)
-                            .map(uid => ({ uid }));
+                    const manifestEntries = manifest
+                        .map(entry => {
 
+                            if (typeof entry === "string") {
+                                return {
+                                    id: entry
+                                };
+                            }
+
+                            if (entry && typeof entry.id === "string") {
+                                return entry;
+                            }
+
+                            return null;
+
+                        })
+                        .filter(Boolean);
+
+                    const uidRequests = manifestEntries.map(entry => ({
+                        uid: entry.id
+                    }));
                         const notAllowedUsers = [];
 
                         // Firebase Auth accepts at most 100 users per getUsers call.
