@@ -530,27 +530,5 @@ server.listen(PORT, async () => {
     console.log(
         `Server listening on http://localhost:${PORT}`
     );
-
-    try {
-        const listener = await ngrok.forward({
-            addr: PORT,
-            authtoken_from_env: true
-        });
-
-        console.log(
-            `Tunnel: ${listener.url()}`
-        );
-    } catch (error) {
-        console.error(
-            "❌ Ngrok failed to initialize."
-        );
-
-        console.error(
-            "Make sure NGROK_AUTHTOKEN is active in your .env file."
-        );
-
-        console.error(
-            `Reason: ${error.message}`
-        );
-    }
+await bootstrapAdmin()
 });
