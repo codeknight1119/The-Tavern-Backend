@@ -1,9 +1,9 @@
 require("dotenv").config();
 
-const {BANNEDWORDS} = require("./bannedWords.js")
+const { BANNEDWORDS } = require("./bannedWords.js");
 
 const firebase = require("./services/firebase");
-const admin = require('firebase-admin');
+const admin = require("firebase-admin");
 const http = require("http");
 const ngrok = require("@ngrok/ngrok");
 const { exec } = require("child_process");
@@ -46,8 +46,8 @@ const server = http.createServer(async (req, res) => {
         // AUTHENTICATION
         // ================================
 
-        if(req.method === "GET" && url.pathname === "/health"){
-            return sendJSON(res, {message:"Server is active."})
+        if (req.method === "GET" && url.pathname === "/health") {
+            return sendJSON(res, { message: "Server is active." });
         }
 
         const user = await authenticate(req);
@@ -55,7 +55,6 @@ const server = http.createServer(async (req, res) => {
         if (!user) {
             return unauthorized(res);
         }
-
 
         const params = url.searchParams;
 
@@ -65,14 +64,12 @@ const server = http.createServer(async (req, res) => {
         // ================================
 
         if (req.method === "GET") {
-
             switch (url.pathname) {
 
                 case "/":
                     return sendJSON(res, {
                         message: "API works, try another route"
                     });
-
 
                 case "/hello":
                     return sendJSON(res, {
@@ -83,9 +80,8 @@ const server = http.createServer(async (req, res) => {
                 case "/health":
                     return sendJSON(res, {
                         status: "Ready for another adventure!"
-                        //tavern themed. ik im a great dev
-                    })
-
+                        // tavern themed. ik im a great dev
+                    });
 
                 default:
                     return notFound(res);
@@ -98,8 +94,53 @@ const server = http.createServer(async (req, res) => {
         // ================================
 
         if (req.method === "POST") {
-
             switch (url.pathname) {
+
+                // ================================
+                // GET A USER'S AUTH CLAIMS
+                // ================================
+
+                case "/getUserClaims": {
+                    if (!user.permissions?.includes("officer")) {
+                        return sendJSON(res, {
+                            error: "Unauthorized"
+                        }, 403);
+                    }
+
+                    try {
+                        const body = await readBody(req);
+
+                        if (!body || !body.uid) {
+                            return sendJSON(res, {
+                                error: "uid is required"
+                            }, 400);
+                        }
+
+                        const targetUser = await admin.auth().getUser(body.uid);
+                        const claims = targetUser.customClaims || {};
+
+                        // Only expose authorization claims needed by the officer UI.
+                        return sendJSON(res, {
+                            claims: {
+                                allowed: claims.allowed === true,
+                                permissions: Array.isArray(claims.permissions)
+                                    ? claims.permissions
+                                    : []
+                            }
+                        });
+
+                    } catch (e) {
+                        console.error("getUserClaims error:", e);
+
+                        return sendJSON(res, {
+                            error: e.message || String(e)
+                        }, 500);
+                    }
+                }
+
+                // ================================
+                // SET A USER'S AUTH CLAIMS
+                // ================================
 
                 case "/setPermissions": {
                     if (!user.permissions?.includes("officer")) {
@@ -123,7 +164,6 @@ const server = http.createServer(async (req, res) => {
                         }
 
                         const targetUser = await admin.auth().getUser(body.uid);
-
                         const existingClaims = targetUser.customClaims || {};
 
                         const updatedClaims = {
@@ -138,7 +178,9 @@ const server = http.createServer(async (req, res) => {
                         );
 
                         return sendJSON(res, {
-                            message: "Permissions have been updated"
+                            message: "Permissions have been updated",
+                            allowed: body.allowed,
+                            permissions: body.permissions
                         });
 
                     } catch (e) {
@@ -151,34 +193,32 @@ const server = http.createServer(async (req, res) => {
                 }
 
                 case "/checkMessage": {
-                 const body = await readBody(req);
+                    const body = await readBody(req);
 
-                // 1. Safety check: prevent the server from crashing if 'message' is missing
-                if (!body || typeof body.message !== 'string') {
-                    return sendJSON(res, { 
-                        error: "A valid text message is required",
-                        clean: false 
+                    // Prevent the server from crashing if 'message' is missing.
+                    if (!body || typeof body.message !== "string") {
+                        return sendJSON(res, {
+                            error: "A valid text message is required",
+                            clean: false
+                        });
+                    }
+
+                    // Convert the message to lowercase so casing does not bypass the filter.
+                    const messageLower = body.message.toLowerCase();
+
+                    const hasInappropriateContent = BANNEDWORDS.some(word =>
+                        messageLower.includes(word.toLowerCase())
+                    );
+
+                    return sendJSON(res, {
+                        clean: !hasInappropriateContent
                     });
-                }
-
-                // 2. Convert the message to lowercase so "BadWord" and "badword" are treated the same
-                const messageLower = body.message.toLowerCase();
-
-                // 3. Check against the banned words list
-                const hasInappropriateContent = BANNEDWORDS.some(word => 
-                    messageLower.includes(word.toLowerCase())
-                );
-
-                // 4. Return the corrected logic
-                return sendJSON(res, {
-                    clean: !hasInappropriateContent 
-                });
                 }
 
                 // Restart/reset the server through PM2 after pulling the latest code.
                 case "/restart":
                 case "/reset": {
-                    if (user.tech !== true) {
+                    if (!user.tech) {
                         return sendJSON(res, { error: "Not allowed" }, 403);
                     }
 
@@ -214,7 +254,6 @@ const server = http.createServer(async (req, res) => {
                     return;
                 }
 
-
                 default:
                     return notFound(res);
             }
@@ -228,7 +267,6 @@ const server = http.createServer(async (req, res) => {
         return notFound(res);
 
     } catch (err) {
-
         console.error("SERVER ERROR:");
         console.error(err);
 
@@ -251,7 +289,6 @@ const server = http.createServer(async (req, res) => {
 // ================================
 
 function sendJSON(res, data, status = 200) {
-
     res.writeHead(status, {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*"
@@ -266,7 +303,6 @@ function sendJSON(res, data, status = 200) {
 // ================================
 
 function unauthorized(res) {
-
     return sendJSON(
         res,
         {
@@ -282,7 +318,6 @@ function unauthorized(res) {
 // ================================
 
 function notFound(res) {
-
     return sendJSON(
         res,
         {
@@ -298,9 +333,7 @@ function notFound(res) {
 // ================================
 
 function readBody(req) {
-
     return new Promise((resolve, reject) => {
-
         let body = "";
 
         req.on("data", chunk => {
@@ -308,7 +341,6 @@ function readBody(req) {
         });
 
         req.on("end", () => {
-
             if (!body) {
                 return resolve(null);
             }
@@ -330,29 +362,22 @@ function readBody(req) {
 // ================================
 
 async function authenticate(req) {
-
     const authHeader = req.headers.authorization;
 
     if (!authHeader) {
         return null;
     }
 
-
-    // Only accept Bearer tokens
+    // Only accept Bearer tokens.
     if (!authHeader.startsWith("Bearer ")) {
         return null;
     }
 
-
     const token = authHeader.substring(7);
 
-
     try {
-
         return await firebase.auth.verifyIdToken(token);
-
     } catch (err) {
-
         console.error("Firebase authentication error:");
         console.error(err);
 
@@ -366,14 +391,11 @@ async function authenticate(req) {
 // ================================
 
 server.listen(PORT, async () => {
-
     console.log(
         `Server listening on http://localhost:${PORT}`
     );
 
-
     try {
-
         const listener = await ngrok.forward({
             addr: PORT,
             authtoken_from_env: true
@@ -384,7 +406,6 @@ server.listen(PORT, async () => {
         );
 
     } catch (error) {
-
         console.error(
             "❌ Ngrok failed to initialize."
         );
