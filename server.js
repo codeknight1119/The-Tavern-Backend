@@ -10,6 +10,44 @@ const { exec } = require("child_process");
 
 const PORT = process.env.PORT || 8080;
 
+// ================================
+// USER MANIFEST CACHE
+// ================================
+
+let userManifest = null;
+let userManifestTimestamp = 0;
+
+async function checkUserManifest() {
+    try {
+        const timestampData = await firebase.firestore
+            .collection("users")
+            .doc("userManifestTimestamp")
+            .get();
+
+        const remoteTimestamp = Number(timestampData.data()?.timestamp) || 0;
+
+        if (userManifest === null || remoteTimestamp > userManifestTimestamp) {
+            const manifestData = await firebase.firestore
+                .collection("users")
+                .doc("userManifest")
+                .get();
+
+            const rawData = manifestData.data();
+
+            userManifest = Array.isArray(rawData?.manifest)
+                ? rawData.manifest
+                : [];
+
+            userManifestTimestamp = remoteTimestamp;
+        }
+
+        return userManifest;
+    } catch (error) {
+        console.error("User manifest error:", error);
+        throw error;
+    }
+}
+
 
 // ================================
 // HTTP SERVER
@@ -23,7 +61,6 @@ const server = http.createServer(async (req, res) => {
         );
 
         console.log(`${req.method} ${url.pathname}`);
-
 
         // ================================
         // CORS PREFLIGHT
@@ -41,7 +78,6 @@ const server = http.createServer(async (req, res) => {
             return res.end();
         }
 
-
         // ================================
         // AUTHENTICATION
         // ================================
@@ -58,14 +94,12 @@ const server = http.createServer(async (req, res) => {
 
         const params = url.searchParams;
 
-
         // ================================
         // GET
         // ================================
 
         if (req.method === "GET") {
             switch (url.pathname) {
-
                 case "/":
                     return sendJSON(res, {
                         message: "API works, try another route"
@@ -80,14 +114,12 @@ const server = http.createServer(async (req, res) => {
                 case "/health":
                     return sendJSON(res, {
                         status: "Ready for another adventure!"
-                        // tavern themed. ik im a great dev
                     });
 
                 default:
                     return notFound(res);
             }
         }
-
 
         // ================================
         // POST
@@ -119,7 +151,6 @@ const server = http.createServer(async (req, res) => {
                         const targetUser = await admin.auth().getUser(body.uid);
                         const claims = targetUser.customClaims || {};
 
-                        // Only expose authorization claims needed by the officer UI.
                         return sendJSON(res, {
                             claims: {
                                 allowed: claims.allowed === true,
@@ -128,9 +159,67 @@ const server = http.createServer(async (req, res) => {
                                     : []
                             }
                         });
-
                     } catch (e) {
                         console.error("getUserClaims error:", e);
+
+                        return sendJSON(res, {
+                            error: e.message || String(e)
+                        }, 500);
+                    }
+                }
+
+                // ================================
+                // GET ALL NOT-ALLOWED USERS
+                // ================================
+
+                case "/getNotAllowedUsers": {
+                    if (!user.permissions?.includes("officer")) {
+                        return sendJSON(res, {
+                            error: "Unauthorized"
+                        }, 403);
+                    }
+
+                    try {
+                        const manifest = await checkUserManifest();
+
+                        if (manifest.length === 0) {
+                            return sendJSON(res, []);
+                        }
+
+                        const uidRequests = manifest
+                            .filter(uid => typeof uid === "string" && uid.length > 0)
+                            .map(uid => ({ uid }));
+
+                        const notAllowedUsers = [];
+
+                        // Firebase Auth getUsers accepts batches, so avoid making
+                        // one network request per UID.
+                        for (let i = 0; i < uidRequests.length; i += 100) {
+                            const batch = uidRequests.slice(i, i + 100);
+                            const result = await admin.auth().getUsers(batch);
+
+                            for (const authUser of result.users) {
+                                const claims = authUser.customClaims || {};
+
+                                if (claims.allowed === true) {
+                                    continue;
+                                }
+
+                                notAllowedUsers.push({
+                                    id: authUser.uid,
+                                    claims: {
+                                        allowed: false,
+                                        permissions: Array.isArray(claims.permissions)
+                                            ? claims.permissions
+                                            : []
+                                    }
+                                });
+                            }
+                        }
+
+                        return sendJSON(res, notAllowedUsers);
+                    } catch (e) {
+                        console.error("getNotAllowedUsers error:", e);
 
                         return sendJSON(res, {
                             error: e.message || String(e)
@@ -182,7 +271,6 @@ const server = http.createServer(async (req, res) => {
                             allowed: body.allowed,
                             permissions: body.permissions
                         });
-
                     } catch (e) {
                         console.error("setPermissions error:", e);
 
@@ -195,7 +283,6 @@ const server = http.createServer(async (req, res) => {
                 case "/checkMessage": {
                     const body = await readBody(req);
 
-                    // Prevent the server from crashing if 'message' is missing.
                     if (!body || typeof body.message !== "string") {
                         return sendJSON(res, {
                             error: "A valid text message is required",
@@ -203,7 +290,6 @@ const server = http.createServer(async (req, res) => {
                         });
                     }
 
-                    // Convert the message to lowercase so casing does not bypass the filter.
                     const messageLower = body.message.toLowerCase();
 
                     const hasInappropriateContent = BANNEDWORDS.some(word =>
@@ -233,7 +319,6 @@ const server = http.createServer(async (req, res) => {
                         console.log(stdout);
                         if (stderr) console.error(stderr);
 
-                        // Send the response before PM2 restarts this process.
                         sendJSON(res, {
                             message: "Updates pulled. Restarting server with PM2."
                         });
@@ -259,13 +344,7 @@ const server = http.createServer(async (req, res) => {
             }
         }
 
-
-        // ================================
-        // UNKNOWN HTTP METHOD
-        // ================================
-
         return notFound(res);
-
     } catch (err) {
         console.error("SERVER ERROR:");
         console.error(err);
@@ -283,7 +362,6 @@ const server = http.createServer(async (req, res) => {
     }
 });
 
-
 // ================================
 // SEND JSON
 // ================================
@@ -296,7 +374,6 @@ function sendJSON(res, data, status = 200) {
 
     res.end(JSON.stringify(data));
 }
-
 
 // ================================
 // UNAUTHORIZED
@@ -312,7 +389,6 @@ function unauthorized(res) {
     );
 }
 
-
 // ================================
 // NOT FOUND
 // ================================
@@ -326,7 +402,6 @@ function notFound(res) {
         404
     );
 }
-
 
 // ================================
 // READ POST BODY
@@ -356,7 +431,6 @@ function readBody(req) {
     });
 }
 
-
 // ================================
 // FIREBASE AUTHENTICATION
 // ================================
@@ -368,7 +442,6 @@ async function authenticate(req) {
         return null;
     }
 
-    // Only accept Bearer tokens.
     if (!authHeader.startsWith("Bearer ")) {
         return null;
     }
@@ -384,7 +457,6 @@ async function authenticate(req) {
         return null;
     }
 }
-
 
 // ================================
 // START SERVER
@@ -404,7 +476,6 @@ server.listen(PORT, async () => {
         console.log(
             `Tunnel: ${listener.url()}`
         );
-
     } catch (error) {
         console.error(
             "❌ Ngrok failed to initialize."
