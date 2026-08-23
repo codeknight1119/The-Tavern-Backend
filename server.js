@@ -611,6 +611,6 @@ server.listen(PORT, async () => {
     console.log(
         `Server listening on http://localhost:${PORT}`
     );
-    await bootstrapAdmin();
+ //   await bootstrapAdmin();
     await migrateUserDocuments();
 });
