@@ -20,7 +20,7 @@ let userManifestTimestamp = 0;
 async function checkUserManifest() {
     try {
         const timestampSnapshot = await firebase.db
-            .collection("users")
+            .collection("manifest")
             .doc("userManifestTimestamp")
             .get();
 
@@ -33,7 +33,7 @@ async function checkUserManifest() {
             remoteTimestamp > userManifestTimestamp
         ) {
             const manifestSnapshot = await firebase.db
-                .collection("users")
+                .collection("manifest")
                 .doc("userManifest")
                 .get();
 
@@ -86,18 +86,49 @@ async function migrateManifestLocations() {
             oldTimestampRef.get()
         ]);
 
+        // Copy the manifest array explicitly instead of relying on the
+        // entire source document object. This makes the migration clear and
+        // lets us verify exactly how many entries were transferred.
         if (!manifestSnapshot.exists) {
-            console.log("Old userManifest document does not exist. Nothing to migrate.");
+            console.log("Old users/userManifest does not exist. Nothing to migrate.");
         } else {
-            await newManifestRef.set(manifestSnapshot.data());
-            console.log("Migrated users/userManifest -> manifest/userManifest");
+            const sourceData = manifestSnapshot.data() || {};
+            const sourceManifest = Array.isArray(sourceData.manifest)
+                ? sourceData.manifest
+                : [];
+
+            await newManifestRef.set({
+                ...sourceData,
+                manifest: sourceManifest
+            });
+
+            const verifySnapshot = await newManifestRef.get();
+            const migratedManifest = verifySnapshot.data()?.manifest;
+            const migratedCount = Array.isArray(migratedManifest)
+                ? migratedManifest.length
+                : 0;
+
+            if (migratedCount !== sourceManifest.length) {
+                throw new Error(
+                    `Manifest migration verification failed: source has ${sourceManifest.length} entries, new document has ${migratedCount}.`
+                );
+            }
+
+            console.log(
+                `Migrated users/userManifest -> manifest/userManifest (${sourceManifest.length} entries).`
+            );
         }
 
         if (!timestampSnapshot.exists) {
-            console.log("Old userManifestTimestamp document does not exist. Nothing to migrate.");
+            console.log("Old users/userManifestTimestamp does not exist. Nothing to migrate.");
         } else {
-            await newTimestampRef.set(timestampSnapshot.data());
-            console.log("Migrated users/userManifestTimestamp -> manifest/userManifestTimestamp");
+            const timestampData = timestampSnapshot.data() || {};
+
+            await newTimestampRef.set(timestampData);
+
+            console.log(
+                "Migrated users/userManifestTimestamp -> manifest/userManifestTimestamp."
+            );
         }
 
         console.log("Manifest location migration complete.");
@@ -127,7 +158,6 @@ function convertUserDocument(data) {
             data["Real Name"] || data.name || "",
         studentID: data.studentID || "-1",
 
-        // Keep campaigns exactly as they currently are
         ...(data.campaigns !== undefined && {
             campaigns: data.campaigns
         })
@@ -183,10 +213,6 @@ const server = http.createServer(async (req, res) => {
 
         console.log(`${req.method} ${url.pathname}`);
 
-        // ================================
-        // CORS PREFLIGHT
-        // ================================
-
         if (req.method === "OPTIONS") {
             res.writeHead(204, {
                 "Access-Control-Allow-Origin": "*",
@@ -199,10 +225,6 @@ const server = http.createServer(async (req, res) => {
             return res.end();
         }
 
-        // ================================
-        // AUTHENTICATION
-        // ================================
-
         if (req.method === "GET" && url.pathname === "/health") {
             return sendJSON(res, { message: "Server is active." });
         }
@@ -214,10 +236,6 @@ const server = http.createServer(async (req, res) => {
         }
 
         const params = url.searchParams;
-
-        // ================================
-        // GET
-        // ================================
 
         if (req.method === "GET") {
             switch (url.pathname) {
@@ -242,31 +260,18 @@ const server = http.createServer(async (req, res) => {
             }
         }
 
-        // ================================
-        // POST
-        // ================================
-
         if (req.method === "POST") {
             switch (url.pathname) {
-
-                // ================================
-                // GET A USER'S AUTH CLAIMS
-                // ================================
-
                 case "/getUserClaims": {
                     if (!user.permissions?.includes("officer")) {
-                        return sendJSON(res, {
-                            error: "Unauthorized"
-                        }, 403);
+                        return sendJSON(res, { error: "Unauthorized" }, 403);
                     }
 
                     try {
                         const body = await readBody(req);
 
                         if (!body || !body.uid) {
-                            return sendJSON(res, {
-                                error: "uid is required"
-                            }, 400);
+                            return sendJSON(res, { error: "uid is required" }, 400);
                         }
 
                         const targetUser = await firebase.auth.getUser(body.uid);
@@ -282,22 +287,13 @@ const server = http.createServer(async (req, res) => {
                         });
                     } catch (e) {
                         console.error("getUserClaims error:", e);
-
-                        return sendJSON(res, {
-                            error: e.message || String(e)
-                        }, 500);
+                        return sendJSON(res, { error: e.message || String(e) }, 500);
                     }
                 }
 
-                // ================================
-                // GET ALL NOT-ALLOWED USERS
-                // ================================
-
                 case "/getNotAllowedUsers": {
                     if (!user.permissions?.includes("officer")) {
-                        return sendJSON(res, {
-                            error: "Unauthorized"
-                        }, 403);
+                        return sendJSON(res, { error: "Unauthorized" }, 403);
                     }
 
                     try {
@@ -309,53 +305,31 @@ const server = http.createServer(async (req, res) => {
 
                         const manifestEntries = manifest
                             .map(entry => {
-
-                                if (typeof entry === "string") {
-                                    return {
-                                        id: entry
-                                    };
-                                }
-
-                                if (entry && typeof entry.id === "string") {
-                                    return entry;
-                                }
-
+                                if (typeof entry === "string") return { id: entry };
+                                if (entry && typeof entry.id === "string") return entry;
                                 return null;
-
                             })
                             .filter(Boolean);
 
-                        const uidRequests = manifestEntries.map(entry => ({
-                            uid: entry.id
-                        }));
+                        const uidRequests = manifestEntries.map(entry => ({ uid: entry.id }));
                         const notAllowedUsers = [];
 
-                        // Firebase Auth accepts at most 100 users per getUsers call.
                         for (let i = 0; i < uidRequests.length; i += 100) {
                             const batch = uidRequests.slice(i, i + 100);
                             const result = await firebase.auth.getUsers(batch);
 
-                            const notAllowedAuthUsers = result.users.filter(
-                                authUser => {
+                            const notAllowedAuthUsers = result.users.filter(authUser => {
+                                const claims = authUser.customClaims || {};
+                                return claims.allowed !== true;
+                            });
 
-                                    const claims = authUser.customClaims || {};
-                                    return claims.allowed !== true;
-                                }
+                            if (notAllowedAuthUsers.length === 0) continue;
+
+                            const profileRefs = notAllowedAuthUsers.map(authUser =>
+                                firebase.db.collection("users").doc(authUser.uid)
                             );
 
-                            if (notAllowedAuthUsers.length === 0) {
-                                continue;
-                            }
-
-                            // Fetch the corresponding Firestore profile documents
-                            // so the frontend can render the same user-search template.
-                            const profileRefs = notAllowedAuthUsers.map(
-                                authUser =>
-                                    firebase.db.collection("users").doc(authUser.uid)
-                            );
-
-                            const profileSnapshots =
-                                await firebase.db.getAll(...profileRefs);
+                            const profileSnapshots = await firebase.db.getAll(...profileRefs);
 
                             for (let j = 0; j < notAllowedAuthUsers.length; j++) {
                                 const authUser = notAllowedAuthUsers[j];
@@ -367,7 +341,7 @@ const server = http.createServer(async (req, res) => {
 
                                 notAllowedUsers.push({
                                     id: authUser.uid,
-                                    "realName": profile["realName"],
+                                    realName: profile.realName,
                                     duesPaid: profile.duesPaid ?? false,
                                     claims: {
                                         allowed: claims.allowed === true,
@@ -382,22 +356,13 @@ const server = http.createServer(async (req, res) => {
                         return sendJSON(res, notAllowedUsers);
                     } catch (e) {
                         console.error("getNotAllowedUsers error:", e);
-
-                        return sendJSON(res, {
-                            error: e.message || String(e)
-                        }, 500);
+                        return sendJSON(res, { error: e.message || String(e) }, 500);
                     }
                 }
 
-                // ================================
-                // SET A USER'S AUTH CLAIMS
-                // ================================
-
                 case "/setPermissions": {
                     if (!user.permissions?.includes("officer")) {
-                        return sendJSON(res, {
-                            error: "Unauthorized"
-                        }, 403);
+                        return sendJSON(res, { error: "Unauthorized" }, 403);
                     }
 
                     try {
@@ -423,10 +388,7 @@ const server = http.createServer(async (req, res) => {
                             permissions: body.permissions
                         };
 
-                        await firebase.auth.setCustomUserClaims(
-                            body.uid,
-                            updatedClaims
-                        );
+                        await firebase.auth.setCustomUserClaims(body.uid, updatedClaims);
 
                         return sendJSON(res, {
                             message: "Permissions have been updated",
@@ -435,10 +397,7 @@ const server = http.createServer(async (req, res) => {
                         });
                     } catch (e) {
                         console.error("setPermissions error:", e);
-
-                        return sendJSON(res, {
-                            error: e.message || String(e)
-                        }, 500);
+                        return sendJSON(res, { error: e.message || String(e) }, 500);
                     }
                 }
 
@@ -453,17 +412,13 @@ const server = http.createServer(async (req, res) => {
                     }
 
                     const messageLower = body.message.toLowerCase();
-
                     const hasInappropriateContent = BANNEDWORDS.some(word =>
                         messageLower.includes(word.toLowerCase())
                     );
 
-                    return sendJSON(res, {
-                        clean: !hasInappropriateContent
-                    });
+                    return sendJSON(res, { clean: !hasInappropriateContent });
                 }
 
-                // Restart/reset the server through PM2 after pulling the latest code.
                 case "/restart":
                 case "/reset": {
                     if (!user.tech) {
@@ -473,9 +428,7 @@ const server = http.createServer(async (req, res) => {
                     exec("git pull", (error, stdout, stderr) => {
                         if (error) {
                             console.error(`Git pull error: ${error.message}`);
-                            return sendJSON(res, {
-                                error: "Failed to pull updates"
-                            }, 500);
+                            return sendJSON(res, { error: "Failed to pull updates" }, 500);
                         }
 
                         console.log(stdout);
@@ -518,15 +471,9 @@ const server = http.createServer(async (req, res) => {
             });
         }
 
-        res.end(JSON.stringify({
-            error: "Internal server error"
-        }));
+        res.end(JSON.stringify({ error: "Internal server error" }));
     }
 });
-
-// ================================
-// SEND JSON
-// ================================
 
 function sendJSON(res, data, status = 200) {
     res.writeHead(status, {
@@ -537,37 +484,13 @@ function sendJSON(res, data, status = 200) {
     res.end(JSON.stringify(data));
 }
 
-// ================================
-// UNAUTHORIZED
-// ================================
-
 function unauthorized(res) {
-    return sendJSON(
-        res,
-        {
-            error: "Unauthorized access"
-        },
-        401
-    );
+    return sendJSON(res, { error: "Unauthorized access" }, 401);
 }
-
-// ================================
-// NOT FOUND
-// ================================
 
 function notFound(res) {
-    return sendJSON(
-        res,
-        {
-            error: "Endpoint not found."
-        },
-        404
-    );
+    return sendJSON(res, { error: "Endpoint not found." }, 404);
 }
-
-// ================================
-// READ POST BODY
-// ================================
 
 function readBody(req) {
     return new Promise((resolve, reject) => {
@@ -578,9 +501,7 @@ function readBody(req) {
         });
 
         req.on("end", () => {
-            if (!body) {
-                return resolve(null);
-            }
+            if (!body) return resolve(null);
 
             try {
                 resolve(JSON.parse(body));
@@ -593,18 +514,10 @@ function readBody(req) {
     });
 }
 
-// ================================
-// FIREBASE AUTHENTICATION
-// ================================
-
 async function authenticate(req) {
     const authHeader = req.headers.authorization;
 
-    if (!authHeader) {
-        return null;
-    }
-
-    if (!authHeader.startsWith("Bearer ")) {
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
         return null;
     }
 
@@ -615,16 +528,13 @@ async function authenticate(req) {
     } catch (err) {
         console.error("Firebase authentication error:");
         console.error(err);
-
         return null;
     }
 }
 
 async function bootstrapAdmin() {
     const uid = "p1DqhQjZvBNWYkFuYJnYBGrbEa53";
-
     const targetUser = await firebase.auth.getUser(uid);
-
     const existingClaims = targetUser.customClaims || {};
 
     const updatedClaims = {
@@ -639,27 +549,17 @@ async function bootstrapAdmin() {
         ]
     };
 
-    updatedClaims.permissions = [
-        ...new Set(updatedClaims.permissions)
-    ];
+    updatedClaims.permissions = [...new Set(updatedClaims.permissions)];
 
-    await firebase.auth.setCustomUserClaims(
-        uid,
-        updatedClaims
-    );
+    await firebase.auth.setCustomUserClaims(uid, updatedClaims);
 
     console.log("Admin claims updated for:", uid);
     console.log(updatedClaims);
 }
 
-// ================================
-// START SERVER
-// ================================
-
 server.listen(PORT, async () => {
-    console.log(
-        `Server listening on http://localhost:${PORT}`
-    );
+    console.log(`Server listening on http://localhost:${PORT}`);
  //   await bootstrapAdmin();
-    await migrateUserDocuments();
+    await migrateManifestLocations();
+    // await migrateUserDocuments();
 });
