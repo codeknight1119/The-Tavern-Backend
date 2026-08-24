@@ -3,6 +3,7 @@ require("dotenv").config();
 const { BANNEDWORDS } = require("./bannedWords.js");
 
 const firebase = require("./services/firebase");
+const { createCampaign } = require("./services/campaigns");
 const admin = require("firebase-admin");
 const http = require("http");
 const ngrok = require("@ngrok/ngrok");
@@ -382,6 +383,10 @@ const server = http.createServer(async (req, res) => {
                         const targetUser = await firebase.auth.getUser(body.uid);
                         const existingClaims = targetUser.customClaims || {};
 
+                        const wasDM = Array.isArray(existingClaims.permissions)
+                            && existingClaims.permissions.includes("DM");
+                        const isDM = body.permissions.includes("DM");
+
                         const updatedClaims = {
                             ...existingClaims,
                             allowed: body.allowed,
@@ -389,6 +394,42 @@ const server = http.createServer(async (req, res) => {
                         };
 
                         await firebase.auth.setCustomUserClaims(body.uid, updatedClaims);
+
+                        // When a user becomes a DM, create their campaign once
+                        // and add only { id, DM } to their user campaign list.
+                        if (isDM && !wasDM) {
+                            const userRef = firebase.db.collection("users").doc(body.uid);
+                            const userSnapshot = await userRef.get();
+
+                            if (!userSnapshot.exists) {
+                                throw new Error(`User document not found: ${body.uid}`);
+                            }
+
+                            const userData = userSnapshot.data() || {};
+                            const firstName =
+                                userData.realFirstName ||
+                                userData.firstName ||
+                                targetUser.displayName?.split(" ")[0] ||
+                                "DM";
+
+                            const campaignRef = await createCampaign({
+                                name: `${firstName} Campaign`,
+                                icon: "ra-dragon",
+                                type: "campaign",
+                                dmUid: body.uid
+                            });
+
+                            await userRef.set({
+                                campaigns: admin.firestore.FieldValue.arrayUnion({
+                                    id: campaignRef.id,
+                                    DM: true
+                                })
+                            }, { merge: true });
+
+                            console.log(
+                                `Created DM campaign ${campaignRef.id} for user ${body.uid}.`
+                            );
+                        }
 
                         return sendJSON(res, {
                             message: "Permissions have been updated",
