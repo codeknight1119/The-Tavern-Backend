@@ -87,9 +87,6 @@ async function migrateManifestLocations() {
             oldTimestampRef.get()
         ]);
 
-        // Copy the manifest array explicitly instead of relying on the
-        // entire source document object. This makes the migration clear and
-        // lets us verify exactly how many entries were transferred.
         if (!manifestSnapshot.exists) {
             console.log("Old users/userManifest does not exist. Nothing to migrate.");
         } else {
@@ -395,8 +392,8 @@ const server = http.createServer(async (req, res) => {
 
                         await firebase.auth.setCustomUserClaims(body.uid, updatedClaims);
 
-                        // When a user becomes a DM, create their campaign once
-                        // and add only { id, DM } to their user campaign list.
+                        // Only create the campaign when DM is newly granted.
+                        // Revoking DM performs no campaign-related action.
                         if (isDM && !wasDM) {
                             const userRef = firebase.db.collection("users").doc(body.uid);
                             const userSnapshot = await userRef.get();
@@ -406,17 +403,15 @@ const server = http.createServer(async (req, res) => {
                             }
 
                             const userData = userSnapshot.data() || {};
-                            const firstName =
-                                userData.realFirstName ||
-                                userData.firstName ||
-                                targetUser.displayName?.split(" ")[0] ||
-                                "DM";
+
+                            if (typeof userData.realFirstName !== "string" || !userData.realFirstName) {
+                                throw new Error(`User realFirstName is missing: ${body.uid}`);
+                            }
 
                             const campaignRef = await createCampaign({
-                                name: `${firstName} Campaign`,
+                                name: `${userData.realFirstName}'s Campaign`,
                                 icon: "ra-dragon",
-                                type: "campaign",
-                                dmUid: body.uid
+                                type: "campaign"
                             });
 
                             await userRef.set({
