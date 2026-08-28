@@ -1,7 +1,6 @@
 require("dotenv").config();
 
 const { BANNEDWORDS } = require("./bannedWords.js");
-
 const firebase = require("./services/firebase");
 const { createCampaign } = require("./services/campaigns");
 const admin = require("firebase-admin");
@@ -25,30 +24,19 @@ async function checkUserManifest() {
             .doc("userManifestTimestamp")
             .get();
 
-        const remoteTimestamp = Number(
-            timestampSnapshot.data()?.timestamp
-        ) || 0;
+        const remoteTimestamp = Number(timestampSnapshot.data()?.timestamp) || 0;
 
-        if (
-            userManifest === null ||
-            remoteTimestamp > userManifestTimestamp
-        ) {
+        if (userManifest === null || remoteTimestamp > userManifestTimestamp) {
             const manifestSnapshot = await firebase.db
                 .collection("manifest")
                 .doc("userManifest")
                 .get();
 
             const rawData = manifestSnapshot.data();
-
-            userManifest = Array.isArray(rawData?.manifest)
-                ? rawData.manifest
-                : [];
-
+            userManifest = Array.isArray(rawData?.manifest) ? rawData.manifest : [];
             userManifestTimestamp = remoteTimestamp;
 
-            console.log(
-                `User manifest refreshed (${userManifest.length} users).`
-            );
+            console.log(`User manifest refreshed (${userManifest.length} users).`);
         }
 
         return userManifest;
@@ -66,21 +54,10 @@ async function migrateManifestLocations() {
     try {
         console.log("Starting manifest location migration...");
 
-        const oldManifestRef = firebase.db
-            .collection("users")
-            .doc("userManifest");
-
-        const oldTimestampRef = firebase.db
-            .collection("users")
-            .doc("userManifestTimestamp");
-
-        const newManifestRef = firebase.db
-            .collection("manifest")
-            .doc("userManifest");
-
-        const newTimestampRef = firebase.db
-            .collection("manifest")
-            .doc("userManifestTimestamp");
+        const oldManifestRef = firebase.db.collection("users").doc("userManifest");
+        const oldTimestampRef = firebase.db.collection("users").doc("userManifestTimestamp");
+        const newManifestRef = firebase.db.collection("manifest").doc("userManifest");
+        const newTimestampRef = firebase.db.collection("manifest").doc("userManifestTimestamp");
 
         const [manifestSnapshot, timestampSnapshot] = await Promise.all([
             oldManifestRef.get(),
@@ -91,9 +68,7 @@ async function migrateManifestLocations() {
             console.log("Old users/userManifest does not exist. Nothing to migrate.");
         } else {
             const sourceData = manifestSnapshot.data() || {};
-            const sourceManifest = Array.isArray(sourceData.manifest)
-                ? sourceData.manifest
-                : [];
+            const sourceManifest = Array.isArray(sourceData.manifest) ? sourceData.manifest : [];
 
             await newManifestRef.set({
                 ...sourceData,
@@ -102,9 +77,7 @@ async function migrateManifestLocations() {
 
             const verifySnapshot = await newManifestRef.get();
             const migratedManifest = verifySnapshot.data()?.manifest;
-            const migratedCount = Array.isArray(migratedManifest)
-                ? migratedManifest.length
-                : 0;
+            const migratedCount = Array.isArray(migratedManifest) ? migratedManifest.length : 0;
 
             if (migratedCount !== sourceManifest.length) {
                 throw new Error(
@@ -112,21 +85,15 @@ async function migrateManifestLocations() {
                 );
             }
 
-            console.log(
-                `Migrated users/userManifest -> manifest/userManifest (${sourceManifest.length} entries).`
-            );
+            console.log(`Migrated users/userManifest -> manifest/userManifest (${sourceManifest.length} entries).`);
         }
 
         if (!timestampSnapshot.exists) {
             console.log("Old users/userManifestTimestamp does not exist. Nothing to migrate.");
         } else {
             const timestampData = timestampSnapshot.data() || {};
-
             await newTimestampRef.set(timestampData);
-
-            console.log(
-                "Migrated users/userManifestTimestamp -> manifest/userManifestTimestamp."
-            );
+            console.log("Migrated users/userManifestTimestamp -> manifest/userManifestTimestamp.");
         }
 
         console.log("Manifest location migration complete.");
@@ -151,14 +118,9 @@ function convertUserDocument(data) {
         displayName: data.name || data["Real Name"] || "",
         realFirstName: parts[0] || "",
         realLastName: parts[1] || "",
-        realName:
-            data.realName ||
-            data["Real Name"] || data.name || "",
+        realName: data.realName || data["Real Name"] || data.name || "",
         studentID: data.studentID || "-1",
-
-        ...(data.campaigns !== undefined && {
-            campaigns: data.campaigns
-        })
+        ...(data.campaigns !== undefined && { campaigns: data.campaigns })
     };
 }
 
@@ -190,12 +152,52 @@ async function migrateUserDocuments() {
             migrated++;
         }
 
-        console.log(
-            `User document migration complete. Migrated: ${migrated}, skipped: ${skipped}.`
-        );
+        console.log(`User document migration complete. Migrated: ${migrated}, skipped: ${skipped}.`);
     } catch (error) {
         console.error("User document migration error:", error);
     }
+}
+
+// ================================
+// RPG AWESOME ICON VALIDATION
+// ================================
+
+let rpgAwesomeIconsPromise = null;
+
+async function getRpgAwesomeIcons() {
+    if (rpgAwesomeIconsPromise) return rpgAwesomeIconsPromise;
+
+    rpgAwesomeIconsPromise = fetch(
+        "https://cdnjs.cloudflare.com/ajax/libs/rpg-awesome/0.2.0/css/rpg-awesome.min.css"
+    )
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`RPG Awesome stylesheet returned ${response.status}`);
+            }
+            return response.text();
+        })
+        .then(css => {
+            const icons = new Set();
+            const regex = /\.ra-([a-z0-9-]+)(?::before)?/g;
+            let match;
+
+            while ((match = regex.exec(css)) !== null) {
+                icons.add(`ra-${match[1]}`);
+            }
+
+            return icons;
+        });
+
+    return rpgAwesomeIconsPromise;
+}
+
+async function isValidRpgAwesomeIcon(icon) {
+    if (typeof icon !== "string" || !/^ra-[a-z0-9-]+$/.test(icon)) {
+        return false;
+    }
+
+    const icons = await getRpgAwesomeIcons();
+    return icons.has(icon);
 }
 
 // ================================
@@ -204,10 +206,7 @@ async function migrateUserDocuments() {
 
 const server = http.createServer(async (req, res) => {
     try {
-        const url = new URL(
-            req.url,
-            `http://${req.headers.host}`
-        );
+        const url = new URL(req.url, `http://${req.headers.host}`);
 
         console.log(`${req.method} ${url.pathname}`);
 
@@ -215,11 +214,9 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(204, {
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-                "Access-Control-Allow-Headers":
-                    "Content-Type, Authorization, ngrok-skip-browser-warning",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization, ngrok-skip-browser-warning",
                 "Access-Control-Max-Age": "86400"
             });
-
             return res.end();
         }
 
@@ -238,20 +235,15 @@ const server = http.createServer(async (req, res) => {
         if (req.method === "GET") {
             switch (url.pathname) {
                 case "/":
-                    return sendJSON(res, {
-                        message: "API works, try another route"
-                    });
+                    return sendJSON(res, { message: "API works, try another route" });
 
                 case "/hello":
                     return sendJSON(res, {
-                        message:
-                            `Hello ${params.get("name") ?? "World"}!`
+                        message: `Hello ${params.get("name") ?? "World"}!`
                     });
 
                 case "/health":
-                    return sendJSON(res, {
-                        status: "Ready for another adventure!"
-                    });
+                    return sendJSON(res, { status: "Ready for another adventure!" });
 
                 default:
                     return notFound(res);
@@ -278,9 +270,7 @@ const server = http.createServer(async (req, res) => {
                         return sendJSON(res, {
                             claims: {
                                 allowed: claims.allowed === true,
-                                permissions: Array.isArray(claims.permissions)
-                                    ? claims.permissions
-                                    : []
+                                permissions: Array.isArray(claims.permissions) ? claims.permissions : []
                             }
                         });
                     } catch (e) {
@@ -332,9 +322,7 @@ const server = http.createServer(async (req, res) => {
                             for (let j = 0; j < notAllowedAuthUsers.length; j++) {
                                 const authUser = notAllowedAuthUsers[j];
                                 const profileSnapshot = profileSnapshots[j];
-                                const profile = profileSnapshot.exists
-                                    ? profileSnapshot.data()
-                                    : {};
+                                const profile = profileSnapshot.exists ? profileSnapshot.data() : {};
                                 const claims = authUser.customClaims || {};
 
                                 notAllowedUsers.push({
@@ -343,9 +331,7 @@ const server = http.createServer(async (req, res) => {
                                     duesPaid: profile.duesPaid ?? false,
                                     claims: {
                                         allowed: claims.allowed === true,
-                                        permissions: Array.isArray(claims.permissions)
-                                            ? claims.permissions
-                                            : []
+                                        permissions: Array.isArray(claims.permissions) ? claims.permissions : []
                                     }
                                 });
                             }
@@ -366,12 +352,7 @@ const server = http.createServer(async (req, res) => {
                     try {
                         const body = await readBody(req);
 
-                        if (
-                            !body ||
-                            !body.uid ||
-                            !Array.isArray(body.permissions) ||
-                            typeof body.allowed !== "boolean"
-                        ) {
+                        if (!body || !body.uid || !Array.isArray(body.permissions) || typeof body.allowed !== "boolean") {
                             return sendJSON(res, {
                                 error: "uid, permissions, and allowed are required"
                             }, 400);
@@ -392,8 +373,6 @@ const server = http.createServer(async (req, res) => {
 
                         await firebase.auth.setCustomUserClaims(body.uid, updatedClaims);
 
-                        // Only create the campaign when DM is newly granted.
-                        // Revoking DM performs no campaign-related action.
                         if (isDM && !wasDM) {
                             const userRef = firebase.db.collection("users").doc(body.uid);
                             const userSnapshot = await userRef.get();
@@ -421,9 +400,7 @@ const server = http.createServer(async (req, res) => {
                                 })
                             }, { merge: true });
 
-                            console.log(
-                                `Created DM campaign ${campaignRef.id} for user ${body.uid}.`
-                            );
+                            console.log(`Created DM campaign ${campaignRef.id} for user ${body.uid}.`);
                         }
 
                         return sendJSON(res, {
@@ -433,6 +410,124 @@ const server = http.createServer(async (req, res) => {
                         });
                     } catch (e) {
                         console.error("setPermissions error:", e);
+                        return sendJSON(res, { error: e.message || String(e) }, 500);
+                    }
+                }
+
+                case "/campaignAdmin": {
+                    if (!user.permissions?.includes("DM")) {
+                        return sendJSON(res, { error: "DM permission is required." }, 403);
+                    }
+
+                    try {
+                        const body = await readBody(req);
+
+                        if (!body || typeof body.campaignId !== "string" || !body.campaignId) {
+                            return sendJSON(res, { error: "campaignId is required" }, 400);
+                        }
+
+                        const campaignId = body.campaignId;
+                        const userRef = firebase.db.collection("users").doc(user.uid);
+                        const userSnapshot = await userRef.get();
+
+                        if (!userSnapshot.exists) {
+                            return sendJSON(res, { error: "DM user document not found" }, 404);
+                        }
+
+                        const userData = userSnapshot.data() || {};
+                        const campaigns = Array.isArray(userData.campaigns) ? userData.campaigns : [];
+                        const ownsCampaign = campaigns.some(
+                            campaign => campaign && campaign.id === campaignId && campaign.DM === true
+                        );
+
+                        if (!ownsCampaign) {
+                            return sendJSON(res, { error: "You are not the DM of this campaign." }, 403);
+                        }
+
+                        const campaignRef = firebase.db.collection("campaigns").doc(campaignId);
+                        const campaignSnapshot = await campaignRef.get();
+
+                        if (!campaignSnapshot.exists) {
+                            return sendJSON(res, { error: "Campaign not found." }, 404);
+                        }
+
+                        if (body.action === "addUser") {
+                            if (typeof body.userId !== "string" || !body.userId) {
+                                return sendJSON(res, { error: "userId is required" }, 400);
+                            }
+
+                            if (body.userId === user.uid) {
+                                return sendJSON(res, {
+                                    message: "You already have access to this campaign.",
+                                    alreadyAdded: true
+                                });
+                            }
+
+                            const targetUserRef = firebase.db.collection("users").doc(body.userId);
+                            const targetUserSnapshot = await targetUserRef.get();
+
+                            if (!targetUserSnapshot.exists) {
+                                return sendJSON(res, { error: "Target user not found." }, 404);
+                            }
+
+                            const targetUserData = targetUserSnapshot.data() || {};
+                            const targetCampaigns = Array.isArray(targetUserData.campaigns)
+                                ? targetUserData.campaigns
+                                : [];
+
+                            const alreadyAdded = targetCampaigns.some(
+                                campaign => campaign && campaign.id === campaignId
+                            );
+
+                            if (alreadyAdded) {
+                                return sendJSON(res, {
+                                    message: "User already has access to this campaign.",
+                                    alreadyAdded: true
+                                });
+                            }
+
+                            await targetUserRef.set({
+                                campaigns: admin.firestore.FieldValue.arrayUnion({
+                                    id: campaignId,
+                                    DM: false
+                                })
+                            }, { merge: true });
+
+                            console.log(`Added user ${body.userId} to campaign ${campaignId}.`);
+
+                            return sendJSON(res, {
+                                message: "User added to campaign.",
+                                alreadyAdded: false,
+                                campaignId,
+                                userId: body.userId
+                            });
+                        }
+
+                        if (body.action === "updateIcon") {
+                            if (typeof body.icon !== "string" || !body.icon) {
+                                return sendJSON(res, { error: "icon is required" }, 400);
+                            }
+
+                            const icon = body.icon.trim();
+
+                            if (!(await isValidRpgAwesomeIcon(icon))) {
+                                return sendJSON(res, {
+                                    error: "That is not a valid RPG Awesome icon."
+                                }, 400);
+                            }
+
+                            await campaignRef.update({ icon });
+
+                            return sendJSON(res, {
+                                message: "Campaign icon updated.",
+                                campaignId,
+                                icon
+                            });
+                        }
+
+                        return sendJSON(res, { error: "Unknown campaign admin action." }, 400);
+                    } catch (e) {
+                        console.error("campaignAdmin error:", e);
                         return sendJSON(res, { error: e.message || String(e) }, 500);
                     }
                 }
@@ -577,9 +672,7 @@ async function bootstrapAdmin() {
         ...existingClaims,
         allowed: true,
         permissions: [
-            ...(Array.isArray(existingClaims.permissions)
-                ? existingClaims.permissions
-                : []),
+            ...(Array.isArray(existingClaims.permissions) ? existingClaims.permissions : []),
             "officer",
             "tech"
         ]
@@ -595,6 +688,6 @@ async function bootstrapAdmin() {
 
 server.listen(PORT, async () => {
     console.log(`Server listening on http://localhost:${PORT}`);
- //   await bootstrapAdmin();
-   // await migrateUserDocuments();
+    // await bootstrapAdmin();
+    // await migrateUserDocuments();
 });
