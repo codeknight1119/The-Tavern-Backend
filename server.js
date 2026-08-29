@@ -3,7 +3,7 @@ require("dotenv").config();
 const { BANNEDWORDS } = require("./bannedWords.js");
 const firebase = require("./services/firebase");
 const { createCampaign } = require("./services/campaigns");
-const admin = require("firebase-admin");
+const { FieldValue } = require("firebase-admin/firestore");
 const http = require("http");
 const ngrok = require("@ngrok/ngrok");
 const { exec } = require("child_process");
@@ -394,12 +394,11 @@ const server = http.createServer(async (req, res) => {
                             });
 
                             await userRef.set({
-                                campaigns: admin.firestore.FieldValue.arrayUnion({
-                                    id: campaignRef.id,
-                                    DM: true
-                                })
+                                campaigns: FieldValue.arrayUnion({
+                                id: campaignRef.id,
+                                DM: true
+                            })
                             }, { merge: true });
-
                             console.log(`Created DM campaign ${campaignRef.id} for user ${body.uid}.`);
                         }
 
