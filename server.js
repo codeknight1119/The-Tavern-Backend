@@ -486,10 +486,10 @@ const server = http.createServer(async (req, res) => {
                             }
 
                             await targetUserRef.set({
-                                campaigns: admin.firestore.FieldValue.arrayUnion({
-                                    id: campaignId,
-                                    DM: false
-                                })
+                                campaigns: FieldValue.arrayUnion({
+                                id: campaignId,
+                                DM: false
+                            })
                             }, { merge: true });
 
                             console.log(`Added user ${body.userId} to campaign ${campaignId}.`);
