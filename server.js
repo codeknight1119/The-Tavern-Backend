@@ -395,9 +395,9 @@ const server = http.createServer(async (req, res) => {
 
                             await userRef.set({
                                 campaigns: FieldValue.arrayUnion({
-                                id: campaignRef.id,
-                                DM: true
-                            })
+                                    id: campaignRef.id,
+                                    DM: true
+                                })
                             }, { merge: true });
                             console.log(`Created DM campaign ${campaignRef.id} for user ${body.uid}.`);
                         }
@@ -455,6 +455,8 @@ const server = http.createServer(async (req, res) => {
                                 return sendJSON(res, { error: "userId is required" }, 400);
                             }
 
+                            const isCoDm = body.isCoDm === true;
+
                             if (body.userId === user.uid) {
                                 return sendJSON(res, {
                                     message: "You already have access to this campaign.",
@@ -470,35 +472,77 @@ const server = http.createServer(async (req, res) => {
                             }
 
                             const targetUserData = targetUserSnapshot.data() || {};
+                            const fullName = typeof targetUserData.realName === "string"
+                                ? targetUserData.realName.trim()
+                                : "";
+                            const studentID = targetUserData.studentID ?? "-1";
+
+                            if (!fullName) {
+                                return sendJSON(res, { error: "Target user's full name is missing." }, 400);
+                            }
+
                             const targetCampaigns = Array.isArray(targetUserData.campaigns)
                                 ? targetUserData.campaigns
                                 : [];
 
-                            const alreadyAdded = targetCampaigns.some(
+                            const existingCampaignEntry = targetCampaigns.find(
                                 campaign => campaign && campaign.id === campaignId
                             );
 
-                            if (alreadyAdded) {
-                                return sendJSON(res, {
-                                    message: "User already has access to this campaign.",
-                                    alreadyAdded: true
+                            const currentCampaignData = campaignSnapshot.data() || {};
+                            const campaignUsers = Array.isArray(currentCampaignData.users)
+                                ? currentCampaignData.users
+                                : [];
+                            const alreadyInCampaignUsers = campaignUsers.some(
+                                campaignUser => campaignUser
+                                    && campaignUser.name === fullName
+                                    && campaignUser.studentID === studentID
+                            );
+
+                            if (existingCampaignEntry) {
+                                if (!isCoDm || existingCampaignEntry.DM === true) {
+                                    return sendJSON(res, {
+                                        message: "User already has access to this campaign.",
+                                        alreadyAdded: true
+                                    });
+                                }
+
+                                await targetUserRef.set({
+                                    campaigns: FieldValue.arrayRemove(existingCampaignEntry)
+                                }, { merge: true });
+
+                                await targetUserRef.set({
+                                    campaigns: FieldValue.arrayUnion({
+                                        id: campaignId,
+                                        DM: true
+                                    })
+                                }, { merge: true });
+                            } else {
+                                await targetUserRef.set({
+                                    campaigns: FieldValue.arrayUnion({
+                                        id: campaignId,
+                                        DM: isCoDm
+                                    })
+                                }, { merge: true });
+                            }
+
+                            if (!alreadyInCampaignUsers) {
+                                await campaignRef.update({
+                                    users: FieldValue.arrayUnion({
+                                        name: fullName,
+                                        studentID
+                                    })
                                 });
                             }
 
-                            await targetUserRef.set({
-                                campaigns: FieldValue.arrayUnion({
-                                id: campaignId,
-                                DM: false
-                            })
-                            }, { merge: true });
-
-                            console.log(`Added user ${body.userId} to campaign ${campaignId}.`);
+                            console.log(`${isCoDm ? "Added co-DM" : "Added user"} ${body.userId} to campaign ${campaignId}.`);
 
                             return sendJSON(res, {
-                                message: "User added to campaign.",
-                                alreadyAdded: false,
+                                message: isCoDm ? "Co-DM added to campaign." : "User added to campaign.",
+                                alreadyAdded: Boolean(existingCampaignEntry),
                                 campaignId,
-                                userId: body.userId
+                                userId: body.userId,
+                                isCoDm
                             });
                         }
 
