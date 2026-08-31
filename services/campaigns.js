@@ -9,7 +9,8 @@ async function createCampaign({ name, icon = "ra-dragon", type = "campaign" }) {
     await campaignRef.set({
         name,
         icon,
-        type
+        type,
+        users: []
     });
 
     return campaignRef;
